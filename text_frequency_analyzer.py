@@ -1,87 +1,200 @@
 #!/usr/bin/env python3
 """
-Text Frequency Analyzer
-Analyzes word frequency in text files and displays results in a clean format.
+Text Frequency Analyzer with Pydantic
+Analyzes word frequency in text files using Pydantic for data validation and modeling.
 """
 
 import argparse
 import re
 from collections import Counter
 from pathlib import Path
+from typing import List, Optional
+
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 
-def clean_text(text):
-    """Remove punctuation and convert to lowercase for consistent analysis."""
-    return re.sub(r'[^\w\s]', '', text.lower())
-
-
-def analyze_text_file(filepath, top_n=10, min_length=3):
-    """
-    Analyze word frequency in a text file.
+class AnalysisConfig(BaseModel):
+    """Configuration model for text analysis parameters."""
     
-    Args:
-        filepath: Path to the text file
-        top_n: Number of top words to return
-        min_length: Minimum word length to consider
+    filepath: Path = Field(..., description="Path to the text file to analyze")
+    top_n: int = Field(10, ge=1, le=100, description="Number of top words to return")
+    min_length: int = Field(3, ge=1, le=20, description="Minimum word length to consider")
     
-    Returns:
-        Counter object with word frequencies
-    """
-    try:
-        content = Path(filepath).read_text(encoding='utf-8')
-        cleaned = clean_text(content)
-        words = [word for word in cleaned.split() if len(word) >= min_length]
-        return Counter(words).most_common(top_n)
-    except FileNotFoundError:
-        print(f"Error: File '{filepath}' not found.")
-        return []
-    except Exception as e:
-        print(f"Error reading file: {e}")
-        return []
+    @field_validator('filepath')
+    @classmethod
+    def validate_filepath(cls, v):
+        """Ensure the file exists or can be created."""
+        if not isinstance(v, Path):
+            v = Path(v)
+        return v
+    
+    class Config:
+        arbitrary_types_allowed = True
 
 
-def display_results(word_freq, total_words):
-    """Display frequency analysis results in a formatted table."""
-    if not word_freq:
-        return
+class WordFrequency(BaseModel):
+    """Model for individual word frequency data."""
     
-    print(f"\nWord Frequency Analysis")
-    print(f"Total words analyzed: {total_words}")
-    print("-" * 40)
-    print(f"{'Word':<15} {'Count':<8} {'Percentage'}")
-    print("-" * 40)
+    word: str = Field(..., min_length=1, description="The word")
+    count: int = Field(..., ge=1, description="Frequency count")
+    percentage: float = Field(..., ge=0, le=100, description="Percentage of total")
     
-    for word, count in word_freq:
-        percentage = (count / total_words) * 100
-        print(f"{word:<15} {count:<8} {percentage:.1f}%")
+    @field_validator('word')
+    @classmethod
+    def validate_word(cls, v):
+        """Ensure word contains only letters."""
+        if not v.isalpha():
+            raise ValueError("Word must contain only alphabetic characters")
+        return v.lower()
+
+
+class AnalysisResult(BaseModel):
+    """Model for complete analysis results."""
+    
+    filepath: Path
+    total_words: int = Field(..., ge=0, description="Total number of words analyzed")
+    unique_words: int = Field(..., ge=0, description="Number of unique words")
+    word_frequencies: List[WordFrequency] = Field(default_factory=list)
+    config: AnalysisConfig
+    
+    @model_validator(mode='after')
+    def validate_word_counts(self):
+        """Ensure word count consistency."""
+        if len(self.word_frequencies) > self.unique_words:
+            raise ValueError("Cannot have more frequency entries than unique words")
+        return self
+    
+    class Config:
+        arbitrary_types_allowed = True
+
+
+class TextAnalyzer:
+    """Main analyzer class with Pydantic data validation."""
+    
+    @staticmethod
+    def clean_text(text: str) -> str:
+        """Remove punctuation and convert to lowercase for consistent analysis."""
+        return re.sub(r'[^\w\s]', '', text.lower())
+    
+    @staticmethod
+    def create_sample_file(filepath: Path) -> None:
+        """Create a sample text file for demonstration."""
+        sample_text = """
+        Python is a high-level programming language. Python emphasizes code readability
+        with its notable use of significant whitespace. Python's language constructs and
+        object-oriented approach aim to help programmers write clear, logical code for
+        small and large-scale projects. Python is dynamically typed and garbage-collected.
+        Pydantic provides data validation using Python type annotations. Pydantic validates
+        and serializes data automatically, making applications more robust and reliable.
+        """
+        filepath.write_text(sample_text.strip())
+        print(f"Created sample file: {filepath}")
+    
+    def analyze_file(self, config: AnalysisConfig) -> Optional[AnalysisResult]:
+        """
+        Analyze word frequency in a text file using validated configuration.
+        
+        Args:
+            config: Validated AnalysisConfig instance
+            
+        Returns:
+            AnalysisResult instance or None if analysis fails
+        """
+        try:
+            # Create sample file if it doesn't exist
+            if not config.filepath.exists():
+                self.create_sample_file(config.filepath)
+            
+            # Read and process file
+            content = config.filepath.read_text(encoding='utf-8')
+            cleaned = self.clean_text(content)
+            all_words = cleaned.split()
+            
+            # Filter words by minimum length
+            filtered_words = [word for word in all_words if len(word) >= config.min_length]
+            
+            if not filtered_words:
+                print("No words found matching the criteria.")
+                return None
+            
+            # Count word frequencies
+            word_counts = Counter(filtered_words)
+            total_words = len(filtered_words)
+            unique_words = len(word_counts)
+            
+            # Create WordFrequency objects for top N words
+            word_frequencies = []
+            for word, count in word_counts.most_common(config.top_n):
+                percentage = (count / total_words) * 100
+                word_freq = WordFrequency(
+                    word=word,
+                    count=count,
+                    percentage=round(percentage, 2)
+                )
+                word_frequencies.append(word_freq)
+            
+            # Return validated result
+            return AnalysisResult(
+                filepath=config.filepath,
+                total_words=total_words,
+                unique_words=unique_words,
+                word_frequencies=word_frequencies,
+                config=config
+            )
+            
+        except Exception as e:
+            print(f"Error analyzing file: {e}")
+            return None
+    
+    @staticmethod
+    def display_results(result: AnalysisResult) -> None:
+        """Display analysis results in a formatted table."""
+        print(f"\nWord Frequency Analysis for: {result.filepath}")
+        print(f"Total words analyzed: {result.total_words}")
+        print(f"Unique words found: {result.unique_words}")
+        print(f"Showing top {len(result.word_frequencies)} words")
+        print("-" * 50)
+        print(f"{'Word':<15} {'Count':<8} {'Percentage'}")
+        print("-" * 50)
+        
+        for word_freq in result.word_frequencies:
+            print(f"{word_freq.word:<15} {word_freq.count:<8} {word_freq.percentage:.1f}%")
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Analyze word frequency in text files")
+    """Main function with command-line interface."""
+    parser = argparse.ArgumentParser(description="Analyze word frequency in text files with Pydantic validation")
     parser.add_argument("file", help="Path to text file to analyze")
-    parser.add_argument("-n", "--top", type=int, default=10, 
+    parser.add_argument("-n", "--top", type=int, default=10,
                        help="Number of top words to show (default: 10)")
     parser.add_argument("-m", "--min-length", type=int, default=3,
                        help="Minimum word length (default: 3)")
     
     args = parser.parse_args()
     
-    # Create sample file if it doesn't exist
-    if not Path(args.file).exists():
-        sample_text = """
-        Python is a high-level programming language. Python emphasizes code readability
-        with its notable use of significant whitespace. Python's language constructs and
-        object-oriented approach aim to help programmers write clear, logical code for
-        small and large-scale projects. Python is dynamically typed and garbage-collected.
-        """
-        Path(args.file).write_text(sample_text.strip())
-        print(f"Created sample file: {args.file}")
-    
-    word_freq = analyze_text_file(args.file, args.top, args.min_length)
-    
-    if word_freq:
-        total_words = sum(count for _, count in word_freq)
-        display_results(word_freq, total_words)
+    try:
+        # Create and validate configuration
+        config = AnalysisConfig(
+            filepath=args.file,
+            top_n=args.top,
+            min_length=args.min_length
+        )
+        
+        # Perform analysis
+        analyzer = TextAnalyzer()
+        result = analyzer.analyze_file(config)
+        
+        if result:
+            analyzer.display_results(result)
+            
+            # Example of accessing validated data
+            print(f"\nConfiguration used:")
+            print(f"  File: {result.config.filepath}")
+            print(f"  Top N: {result.config.top_n}")
+            print(f"  Min length: {result.config.min_length}")
+            
+    except Exception as e:
+        print(f"Configuration error: {e}")
 
 
 if __name__ == "__main__":
