@@ -4,8 +4,8 @@ Text Frequency Analyzer with Pydantic
 Analyzes word frequency in text files using Pydantic for data validation and modeling.
 """
 
-import argparse
 import re
+import typer
 from collections import Counter
 from pathlib import Path
 from typing import List, Optional
@@ -161,23 +161,20 @@ class TextAnalyzer:
             print(f"{word_freq.word:<15} {word_freq.count:<8} {word_freq.percentage:.1f}%")
 
 
-def main():
-    """Main function with command-line interface."""
-    parser = argparse.ArgumentParser(description="Analyze word frequency in text files with Pydantic validation")
-    parser.add_argument("file", help="Path to text file to analyze")
-    parser.add_argument("-n", "--top", type=int, default=10,
-                       help="Number of top words to show (default: 10)")
-    parser.add_argument("-m", "--min-length", type=int, default=3,
-                       help="Minimum word length (default: 3)")
-    
-    args = parser.parse_args()
-    
+def main(
+    file: Path =
+        typer.Argument(..., help="Path to text file to analyze"),
+    top_n: int =
+        typer.Option(10, "-n", "--top_n", help="Number of top words to show (default: 10)"),
+    min_word_length: int =
+        typer.Option(3, "-m", "--min_word_length", help="Minimum word length (default: 3)")
+):    
     try:
         # Create and validate configuration
         config = AnalysisConfig(
-            filepath=args.file,
-            top_n=args.top,
-            min_length=args.min_length
+            filepath=file,
+            top_n=top_n,
+            min_length=min_word_length
         )
         
         # Perform analysis
@@ -198,4 +195,4 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    typer.run(main)
