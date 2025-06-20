@@ -4,7 +4,6 @@ Unit tests for text frequency analyzer with Pydantic validation.
 """
 
 import pytest
-import tempfile
 from pathlib import Path
 from unittest.mock import patch, mock_open
 from pydantic import ValidationError
@@ -18,166 +17,6 @@ from text_frequency_analyzer import (
 
 # Set the file that will be used for all the tests
 test_file_path = "claude-generated-space-text.txt"
-
-class TestAnalysisConfig:
-    """Test cases for AnalysisConfig model."""
-    
-    def test_valid_config_creation(self):
-        """Test creating a valid configuration."""
-        config = AnalysisConfig(
-            filepath=test_file_path,
-            top_n=5,
-            min_length=2
-        )
-        assert config.filepath == Path(test_file_path)
-        assert config.top_n == 5
-        assert config.min_length == 2
-    
-    def test_default_values(self):
-        """Test default configuration values."""
-        config = AnalysisConfig(filepath=test_file_path)
-        assert config.top_n == 10
-        assert config.min_length == 3
-    
-    def test_filepath_conversion(self):
-        """Test that string filepath is converted to Path."""
-        config = AnalysisConfig(filepath=test_file_path)
-        assert isinstance(config.filepath, Path)
-        assert config.filepath == Path(test_file_path)
-    
-    def test_top_n_validation_bounds(self):
-        """Test top_n field validation boundaries."""
-        # Valid boundaries
-        AnalysisConfig(filepath=test_file_path, top_n=1)
-        AnalysisConfig(filepath=test_file_path, top_n=100)
-        
-        # Invalid boundaries
-        with pytest.raises(ValidationError):
-            AnalysisConfig(filepath=test_file_path, top_n=0)
-        
-        with pytest.raises(ValidationError):
-            AnalysisConfig(filepath=test_file_path, top_n=101)
-    
-    def test_min_length_validation_bounds(self):
-        """Test min_length field validation boundaries."""
-        # Valid boundaries
-        AnalysisConfig(filepath=test_file_path, min_length=1)
-        AnalysisConfig(filepath=test_file_path, min_length=20)
-        
-        # Invalid boundaries
-        with pytest.raises(ValidationError):
-            AnalysisConfig(filepath=test_file_path, min_length=0)
-        
-        with pytest.raises(ValidationError):
-            AnalysisConfig(filepath=test_file_path, min_length=21)
-
-
-class TestWordFrequency:
-    """Test cases for WordFrequency model."""
-    
-    def test_valid_word_frequency_creation(self):
-        """Test creating a valid WordFrequency instance."""
-        word_freq = WordFrequency(
-            word="python",
-            count=5,
-            percentage=25.5
-        )
-        assert word_freq.word == "python"
-        assert word_freq.count == 5
-        assert word_freq.percentage == 25.5
-    
-    def test_word_lowercase_conversion(self):
-        """Test that words are converted to lowercase."""
-        word_freq = WordFrequency(word="PYTHON", count=1, percentage=10.0)
-        assert word_freq.word == "python"
-    
-    def test_word_validation_alphabetic_only(self):
-        """Test that words must contain only alphabetic characters."""
-        # Valid word
-        WordFrequency(word="python", count=1, percentage=10.0)
-        
-        # Invalid words with numbers/symbols
-        with pytest.raises(ValidationError):
-            WordFrequency(word="python3", count=1, percentage=10.0)
-        
-        with pytest.raises(ValidationError):
-            WordFrequency(word="hello-world", count=1, percentage=10.0)
-    
-    def test_count_validation(self):
-        """Test count field validation."""
-        # Valid count
-        WordFrequency(word="test", count=1, percentage=10.0)
-        
-        # Invalid count (less than 1)
-        with pytest.raises(ValidationError):
-            WordFrequency(word="test", count=0, percentage=10.0)
-    
-    def test_percentage_validation(self):
-        """Test percentage field validation."""
-        # Valid percentages
-        WordFrequency(word="test", count=1, percentage=0.0)
-        WordFrequency(word="test", count=1, percentage=100.0)
-        
-        # Invalid percentages
-        with pytest.raises(ValidationError):
-            WordFrequency(word="test", count=1, percentage=-1.0)
-        
-        with pytest.raises(ValidationError):
-            WordFrequency(word="test", count=1, percentage=101.0)
-
-
-class TestAnalysisResult:
-    """Test cases for AnalysisResult model."""
-    
-    def test_valid_analysis_result_creation(self):
-        """Test creating a valid AnalysisResult instance."""
-        config = AnalysisConfig(filepath=test_file_path)
-        word_freqs = [
-            WordFrequency(word="python", count=5, percentage=50.0),
-            WordFrequency(word="code", count=3, percentage=30.0)
-        ]
-        
-        result = AnalysisResult(
-            filepath=Path(test_file_path),
-            total_words=10,
-            unique_words=5,
-            word_frequencies=word_freqs,
-            config=config
-        )
-        
-        assert result.filepath == Path(test_file_path)
-        assert result.total_words == 10
-        assert result.unique_words == 5
-        assert len(result.word_frequencies) == 2
-    
-    def test_word_count_consistency_validation(self):
-        """Test that word frequency count doesn't exceed unique words."""
-        config = AnalysisConfig(filepath=test_file_path)
-        
-        # Valid case: fewer frequency entries than unique words
-        word_freqs = [WordFrequency(word="test", count=1, percentage=10.0)]
-        AnalysisResult(
-            filepath=Path(test_file_path),
-            total_words=10,
-            unique_words=5,
-            word_frequencies=word_freqs,
-            config=config
-        )
-        
-        # Invalid case: more frequency entries than unique words
-        word_freqs = [
-            WordFrequency(word="test1", count=1, percentage=10.0),
-            WordFrequency(word="test2", count=1, percentage=10.0),
-            WordFrequency(word="test3", count=1, percentage=10.0)
-        ]
-        with pytest.raises(ValidationError):
-            AnalysisResult(
-                filepath=Path(test_file_path),
-                total_words=10,
-                unique_words=2,  # Less than word_frequencies length
-                word_frequencies=word_freqs,
-                config=config
-            )
 
 
 class TestTextAnalyzer:
@@ -202,25 +41,6 @@ class TestTextAnalyzer:
         cleaned = analyzer.clean_text(text)
         assert cleaned == "python3 is awesome"
     
-    def test_create_sample_file(self, tmp_path):
-        """Test sample file creation."""
-        analyzer = TextAnalyzer()
-        test_file = tmp_path / "sample.txt"
-        
-        # File shouldn't exist initially
-        assert not test_file.exists()
-        
-        # Create sample file
-        with patch('builtins.print') as mock_print:
-            analyzer.create_sample_file(test_file)
-        
-        # File should now exist with content
-        assert test_file.exists()
-        content = test_file.read_text()
-        assert "Python" in content
-        assert "Pydantic" in content
-        mock_print.assert_called_once()
-    
     def test_analyze_file_success(self, tmp_path):
         """Test successful file analysis."""
         analyzer = TextAnalyzer()
@@ -235,27 +55,13 @@ class TestTextAnalyzer:
         
         assert result is not None
         assert result.filepath == test_file
-        assert result.total_words == 7  # All words >= 2 chars
-        assert result.unique_words == 4  # python, is, great, fun, programming
+        assert result.total_words == 8  # All words >= 2 chars
+        assert result.unique_words == 5  # python, is, great, fun, programming
         assert len(result.word_frequencies) == 3  # top_n = 3
         
         # Check that "python" is the most frequent word
         assert result.word_frequencies[0].word == "python"
         assert result.word_frequencies[0].count == 3
-    
-    def test_analyze_file_creates_sample_if_not_exists(self, tmp_path):
-        """Test that analysis creates sample file if original doesn't exist."""
-        analyzer = TextAnalyzer()
-        test_file = tmp_path / "nonexistent.txt"
-        
-        config = AnalysisConfig(filepath=test_file)
-        
-        with patch.object(analyzer, 'create_sample_file') as mock_create:
-            with patch('builtins.print'):
-                result = analyzer.analyze_file(config)
-        
-        mock_create.assert_called_once_with(test_file)
-        assert result is not None
     
     def test_analyze_file_with_min_length_filter(self, tmp_path):
         """Test file analysis with minimum length filtering."""

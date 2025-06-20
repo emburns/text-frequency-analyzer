@@ -1,0 +1,6 @@
+.pytest_cache/
+.venv/
+build/
+tests/__pycache__/
+text_frequency_analyzer.egg-info/
+.coverage
